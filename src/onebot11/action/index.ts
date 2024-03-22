@@ -20,7 +20,7 @@ import SendLike from "./SendLike";
 import SetGroupAddRequest from "./SetGroupAddRequest";
 import SetGroupLeave from "./SetGroupLeave";
 import GetGuildList from "./GetGuildList";
-import Debug from "./Debug";
+import Debug from "./llonebot/Debug";
 import SetFriendAddRequest from "./SetFriendAddRequest";
 import SetGroupWholeBan from "./SetGroupWholeBan";
 import SetGroupName from "./SetGroupName";
@@ -36,8 +36,12 @@ import GoCQHTTPUploadGroupFile from "./go-cqhttp/UploadGroupFile";
 import {GetConfigAction, SetConfigAction} from "./llonebot/Config";
 import GetGroupAddRequest from "./llonebot/GetGroupAddRequest";
 import SetQQAvatar from './llonebot/SetQQAvatar'
+import GoCQHTTPDownloadFile from "./go-cqhttp/DownloadFile";
+import GoCQHTTPGetGroupMsgHistory from "./go-cqhttp/GetGroupMsgHistory";
+import GetFile from "./GetFile";
 
 export const actionHandlers = [
+    new GetFile(),
     new Debug(),
     new GetConfigAction(),
     new SetConfigAction(),
@@ -72,9 +76,11 @@ export const actionHandlers = [
     new GoCQHTTPSendGroupForwardMsg(),
     new GoCQHTTPSendPrivateForwardMsg(),
     new GoCQHTTPGetStrangerInfo(),
+    new GoCQHTTPDownloadFile(),
     new GetGuildList(),
     new GoCQHTTPMarkMsgAsRead(),
     new GoCQHTTPUploadGroupFile(),
+    new GoCQHTTPGetGroupMsgHistory(),
 
 ]
 

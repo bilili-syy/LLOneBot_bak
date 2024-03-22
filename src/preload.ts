@@ -5,7 +5,7 @@ import {
     CHANNEL_ERROR,
     CHANNEL_GET_CONFIG,
     CHANNEL_LOG,
-    CHANNEL_CHECKVERSION,
+    CHANNEL_CHECK_VERSION,
     CHANNEL_SELECT_FILE,
     CHANNEL_SET_CONFIG,
     CHANNEL_UPDATE,
@@ -19,18 +19,18 @@ const llonebot = {
         ipcRenderer.send(CHANNEL_LOG, data);
     },
     checkVersion:async (): Promise<CheckVersion> => {
-        return ipcRenderer.invoke(CHANNEL_CHECKVERSION);
+        return ipcRenderer.invoke(CHANNEL_CHECK_VERSION);
     },
     updateLLOneBot:async (): Promise<boolean> => {
         return ipcRenderer.invoke(CHANNEL_UPDATE);
     },
-    setConfig: (config: Config) => {
-        ipcRenderer.send(CHANNEL_SET_CONFIG, config);
+    setConfig: (ask: boolean, config: Config) => {
+        ipcRenderer.send(CHANNEL_SET_CONFIG, ask, config);
     },
     getConfig: async (): Promise<Config> => {
         return ipcRenderer.invoke(CHANNEL_GET_CONFIG);
     },
-    getError: async (): Promise<LLOneBotError> => {
+    getError: async (): Promise<string> => {
         return ipcRenderer.invoke(CHANNEL_ERROR);
     },
     selectFile: (): Promise<string> => {

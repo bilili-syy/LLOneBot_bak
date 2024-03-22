@@ -1,8 +1,11 @@
 import {ipcMain} from "electron";
-import {hookApiCallbacks, ReceiveCmd, registerReceiveHook, removeReceiveHook} from "./hook";
+import {hookApiCallbacks, ReceiveCmd, ReceiveCmdS, registerReceiveHook, removeReceiveHook} from "./hook";
 
 import {v4 as uuidv4} from "uuid"
 import {log} from "../common/utils/log";
+import {NTQQWindow, NTQQWindowApi, NTQQWindows} from "./api/window";
+import {WebApi} from "./api/webapi";
+import {HOOK_LOG} from "../common/config";
 
 export enum NTQQApiClass {
     NT_API = "ns-ntApi",
@@ -11,13 +14,17 @@ export enum NTQQApiClass {
     WINDOW_API = "ns-WindowApi",
     HOTUPDATE_API = "ns-HotUpdateApi",
     BUSINESS_API = "ns-BusinessApi",
-    GLOBAL_DATA = "ns-GlobalDataApi"
+    GLOBAL_DATA = "ns-GlobalDataApi",
+    SKEY_API = "ns-SkeyApi",
+    GROUP_HOME_WORK = "ns-GroupHomeWork",
+    GROUP_ESSENCE = "ns-GroupEssence",
 }
 
 export enum NTQQApiMethod {
     RECENT_CONTACT = "nodeIKernelRecentContactService/fetchAndSubscribeABatchOfRecentContact",
     ADD_ACTIVE_CHAT = "nodeIKernelMsgService/getAioFirstViewLatestMsgsAndAddActiveChat",  // 激活群助手内的聊天窗口，这样才能收到消息
-    ADD_ACTIVE_CHAT_2 = "nodeIKernelMsgService/getMsgsIncludeSelfAndAddActiveChat",
+    HISTORY_MSG_998 = "nodeIKernelMsgService/getMsgsIncludeSelfAndAddActiveChat",
+    HISTORY_MSG = "nodeIKernelMsgService/getMsgsIncludeSelf",
     LIKE_FRIEND = "nodeIKernelProfileLikeService/setBuddyProfileLike",
     SELF_INFO = "fetchAuthData",
     FRIENDS = "nodeIKernelBuddyService/getBuddyList",
@@ -65,7 +72,9 @@ export enum NTQQApiMethod {
 
     OPEN_EXTRA_WINDOW = 'openExternalWindow',
 
-    SET_QQ_AVATAR = 'nodeIKernelProfileService/setHeader'
+    SET_QQ_AVATAR = 'nodeIKernelProfileService/setHeader',
+    GET_SKEY = "nodeIKernelTipOffService/getPskey",
+    UPDATE_SKEY = "updatePskey"
 }
 
 enum NTQQApiChannel {
@@ -98,7 +107,7 @@ export function callNTQQApi<ReturnType>(params: NTQQApiParams) {
     timeout = timeout ?? 5;
     afterFirstCmd = afterFirstCmd ?? true;
     const uuid = uuidv4();
-    // log("callNTQQApi", channel, className, methodName, args, uuid)
+    HOOK_LOG && log("callNTQQApi", channel, className, methodName, args, uuid)
     return new Promise((resolve: (data: ReturnType) => void, reject) => {
         // log("callNTQQApiPromise", channel, className, methodName, args, uuid)
         const _timeout = timeout * 1000
@@ -109,7 +118,7 @@ export function callNTQQApi<ReturnType>(params: NTQQApiParams) {
         }
         const apiArgs = [methodName, ...args]
         if (!cbCmd) {
-            // QQ后端会返回结果，并且可以插根据uuid识别
+            // QQ后端会返回结果，并且可以根据uuid识别
             hookApiCallbacks[uuid] = (r: ReturnType) => {
                 success = true
                 resolve(r)
@@ -178,4 +187,58 @@ export class NTQQApi {
         })
     }
 
+    static async getSkey(groupName: string, groupCode: string): Promise<{data: string}> {
+        return await NTQQWindowApi.openWindow<{data: string}>(NTQQWindows.GroupHomeWorkWindow, [{
+            groupName,
+            groupCode,
+            "source": "funcbar"
+        }], ReceiveCmdS.SKEY_UPDATE, 1);
+        // return await callNTQQApi<string>({
+        //     className: NTQQApiClass.GROUP_HOME_WORK,
+        //     methodName: NTQQApiMethod.UPDATE_SKEY,
+        //     args: [
+        //         {
+        //             domain: "qun.qq.com"
+        //         }
+        //     ]
+        // })
+        // return await callNTQQApi<GeneralCallResult>({
+        //     methodName: NTQQApiMethod.GET_SKEY,
+        //     args: [
+        //         {
+        //             "domains": [
+        //                 "qzone.qq.com",
+        //                 "qlive.qq.com",
+        //                 "qun.qq.com",
+        //                 "gamecenter.qq.com",
+        //                 "vip.qq.com",
+        //                 "qianbao.qq.com",
+        //                 "qidian.qq.com"
+        //             ],
+        //             "isForNewPCQQ": false
+        //         },
+        //         null
+        //     ]
+        // })
+    }
+
+    static async getPSkey() {
+        return await callNTQQApi<string>({
+            className: NTQQApiClass.GROUP_HOME_WORK,
+            methodName: NTQQApiMethod.UPDATE_SKEY,
+            args: [
+                {
+                    domain: "qun.qq.com"
+                }
+            ]
+        })
+    }
+
+    static async addGroupDigest(groupCode: string, msgSeq: string) {
+        return await new WebApi().addGroupDigest(groupCode, msgSeq);
+    }
+
+    static async getGroupDigest(groupCode: string) {
+        return await new WebApi().getGroupDigest(groupCode);
+    }
 }

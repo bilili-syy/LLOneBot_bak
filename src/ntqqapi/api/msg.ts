@@ -5,6 +5,7 @@ import {selfInfo} from "../../common/data";
 import {ReceiveCmdS, registerReceiveHook} from "../hook";
 import {log} from "../../common/utils/log";
 import {sleep} from "../../common/utils/helper";
+import {isQQ998} from "../../common/utils";
 
 export let sendMessagePool: Record<string, ((sendSuccessMsg: RawMessage) => void) | null> = {}// peerUid: callbackFunnc
 
@@ -21,6 +22,17 @@ export class NTQQMsgApi {
         return await callNTQQApi<GeneralCallResult>({
             methodName: NTQQApiMethod.ADD_ACTIVE_CHAT,
             args: [{peer:{peerUid: groupCode, chatType: ChatType.group}, cnt: 20}, null]
+        })
+    }
+    static async getMsgHistory(peer: Peer, msgId: string, count: number) {
+        return await callNTQQApi<GeneralCallResult & {msgList: RawMessage[]}>({
+            methodName: isQQ998 ? NTQQApiMethod.HISTORY_MSG_998 : NTQQApiMethod.HISTORY_MSG,
+            args: [{
+                peer,
+                msgId,
+                cnt: count,
+                queryOrder: true,
+            }, null]
         })
     }
     static async fetchRecentContact(){

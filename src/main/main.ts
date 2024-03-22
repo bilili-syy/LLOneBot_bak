@@ -7,13 +7,13 @@ import {
     CHANNEL_ERROR,
     CHANNEL_GET_CONFIG,
     CHANNEL_LOG,
-    CHANNEL_CHECKVERSION,
+    CHANNEL_CHECK_VERSION,
     CHANNEL_SELECT_FILE,
     CHANNEL_SET_CONFIG,
     CHANNEL_UPDATE,
 } from "../common/channels";
 import {ob11WebsocketServer} from "../onebot11/server/ws/WebsocketServer";
-import {DATA_DIR} from "../common/utils";
+import {DATA_DIR, wrapText} from "../common/utils";
 import {
     friendRequests,
     getFriend,
@@ -41,23 +41,25 @@ import {NTQQUserApi} from "../ntqqapi/api/user";
 import {NTQQGroupApi} from "../ntqqapi/api/group";
 import {registerPokeHandler} from "../ntqqapi/external/ccpoke";
 import {OB11FriendPokeEvent, OB11GroupPokeEvent} from "../onebot11/event/notice/OB11PokeEvent";
-import {checkVersion, updateLLOneBot} from "../common/utils/update";
-import {checkFfmpeg} from "../common/utils/file";
+import {checkNewVersion, upgradeLLOneBot} from "../common/utils/upgrade";
 import {log} from "../common/utils/log";
 import {getConfigUtil} from "../common/config";
+import {checkFfmpeg} from "../common/utils/video";
 
 
 let running = false;
 
+let mainWindow: BrowserWindow | null = null;
 
 // 加载插件时触发
 function onLoad() {
     log("llonebot main onLoad");
-    ipcMain.handle(CHANNEL_CHECKVERSION, async (event, arg) => {
-        return checkVersion();
+    ipcMain.handle(CHANNEL_CHECK_VERSION, async (event, arg) => {
+
+        return checkNewVersion();
     });
     ipcMain.handle(CHANNEL_UPDATE, async (event, arg) => {
-        return updateLLOneBot();
+        return upgradeLLOneBot();
     });
     ipcMain.handle(CHANNEL_SELECT_FILE, async (event, arg) => {
         const selectPath = new Promise<string>((resolve, reject) => {
@@ -92,15 +94,39 @@ function onLoad() {
     if (!fs.existsSync(DATA_DIR)) {
         fs.mkdirSync(DATA_DIR, {recursive: true});
     }
-    ipcMain.handle(CHANNEL_ERROR, (event, arg) => {
-        return llonebotError;
+    ipcMain.handle(CHANNEL_ERROR, async (event, arg) => {
+        const ffmpegOk = await checkFfmpeg(getConfigUtil().getConfig().ffmpeg)
+        llonebotError.ffmpegError = ffmpegOk ? "" : "没有找到ffmpeg,音频只能发送wav和silk,视频尺寸可能异常"
+        let {httpServerError, wsServerError, otherError, ffmpegError} = llonebotError;
+        let error = `${otherError}\n${httpServerError}\n${wsServerError}\n${ffmpegError}`
+        error = error.replace("\n\n", "\n")
+        error = error.trim();
+        return error;
     })
     ipcMain.handle(CHANNEL_GET_CONFIG, async (event, arg) => {
         const config = getConfigUtil().getConfig()
         return config;
     })
-    ipcMain.on(CHANNEL_SET_CONFIG, (event, config: Config) => {
-        setConfig(config).then();
+    ipcMain.on(CHANNEL_SET_CONFIG, (event, ask:boolean, config: Config) => {
+        if (!ask){
+            setConfig(config).then();
+            return
+        }
+        dialog.showMessageBox(mainWindow, {
+            type: 'question',
+            buttons: ['确认', '取消'],
+            defaultId: 0, // 默认选中的按钮，0 代表第一个按钮，即 "确认"
+            title: '确认保存',
+            message: '是否保存？',
+            detail: 'LLOneBot配置已更改，是否保存？'
+        }).then(result => {
+            if (result.response === 0) {
+                setConfig(config).then();
+            } else {
+            }
+        }).catch(err => {
+            log("保存设置询问弹窗错误", err);
+        });
     })
 
     ipcMain.on(CHANNEL_LOG, (event, arg) => {
@@ -331,7 +357,7 @@ function onLoad() {
 
     async function start() {
         log("llonebot pid", process.pid)
-
+        llonebotError.otherError = "";
         startTime = Date.now();
         dbUtil.getReceivedTempUinMap().then(m=>{
             for (const [key, value] of Object.entries(m)) {
@@ -341,18 +367,8 @@ function onLoad() {
         startReceiveHook().then();
         NTQQGroupApi.getGroups(true).then()
         const config = getConfigUtil().getConfig()
-        // 检查ffmpeg
-        checkFfmpeg(config.ffmpeg).then(exist => {
-            if (!exist) {
-                llonebotError.ffmpegError = `没有找到ffmpeg,音频只能发送wav和silk`
-            }
-        })
         if (config.ob11.enableHttp) {
-            try {
-                ob11HTTPServer.start(config.ob11.httpPort)
-            } catch (e) {
-                log("http server start failed", e);
-            }
+            ob11HTTPServer.start(config.ob11.httpPort)
         }
         if (config.ob11.enableWs) {
             ob11WebsocketServer.start(config.ob11.wsPort);
@@ -406,6 +422,7 @@ function onBrowserWindowCreated(window: BrowserWindow) {
     if (selfInfo.uid) {
         return
     }
+    mainWindow = window;
     log("window create", window.webContents.getURL().toString())
     try {
         hookNTQQApiCall(window);
@@ -420,6 +437,7 @@ try {
 } catch (e: any) {
     console.log(e.toString())
 }
+
 
 // 这两个函数都是可选的
 export {

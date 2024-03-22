@@ -3,8 +3,8 @@ import {ob11HTTPServer} from "../onebot11/server/http";
 import {ob11WebsocketServer} from "../onebot11/server/ws/WebsocketServer";
 import {ob11ReverseWebsockets} from "../onebot11/server/ws/ReverseWebsocket";
 import {llonebotError} from "../common/data";
-import {checkFfmpeg} from "../common/utils/file";
 import {getConfigUtil} from "../common/config";
+import {checkFfmpeg} from "../common/utils";
 
 export async function setConfig(config: Config) {
     let oldConfig = getConfigUtil().getConfig();
@@ -21,6 +21,7 @@ export async function setConfig(config: Config) {
     // 正向ws端口变化，重启服务
     if (config.ob11.wsPort != oldConfig.ob11.wsPort) {
         ob11WebsocketServer.restart(config.ob11.wsPort);
+        llonebotError.wsServerError = ''
     }
     // 判断是否启用或关闭正向ws
     if (config.ob11.enableWs != oldConfig.ob11.enableWs) {
@@ -51,14 +52,5 @@ export async function setConfig(config: Config) {
             }
         }
     }
-
-    // 检查ffmpeg
-    if (config.ffmpeg) {
-        checkFfmpeg(config.ffmpeg).then(success => {
-            if (success) {
-                llonebotError.ffmpegError = ''
-            }
-        })
-    }
-
+    checkFfmpeg(config.ffmpeg).then()
 }

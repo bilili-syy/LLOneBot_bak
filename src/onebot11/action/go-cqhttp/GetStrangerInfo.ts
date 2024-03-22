@@ -1,8 +1,9 @@
 import BaseAction from "../BaseAction";
 import {OB11User} from "../../types";
-import {getFriend, getGroupMember, groups} from "../../../common/data";
+import {getUidByUin, uidMaps} from "../../../common/data";
 import {OB11Constructor} from "../../constructor";
 import {ActionName} from "../types";
+import {NTQQUserApi} from "../../../ntqqapi/api/user";
 
 
 export default class GoCQHTTPGetStrangerInfo extends BaseAction<{ user_id: number }, OB11User> {
@@ -10,16 +11,10 @@ export default class GoCQHTTPGetStrangerInfo extends BaseAction<{ user_id: numbe
 
     protected async _handle(payload: { user_id: number }): Promise<OB11User> {
         const user_id = payload.user_id.toString()
-        const friend = await getFriend(user_id)
-        if (friend) {
-            return OB11Constructor.friend(friend);
+        const uid = getUidByUin(user_id)
+        if (!uid) {
+            throw new Error("查无此人")
         }
-        for (const group of groups) {
-            const member = await getGroupMember(group.groupCode, user_id)
-            if (member) {
-                return OB11Constructor.groupMember(group.groupCode, member) as OB11User
-            }
-        }
-        throw ("查无此人")
+        return OB11Constructor.stranger(await NTQQUserApi.getUserDetailInfo(uid))
     }
 }

@@ -1,6 +1,7 @@
 /// <reference path="../global.d.ts" />
 import { CheckVersion } from '../common/types';
 import {SettingButton, SettingItem, SettingList, SettingSwitch, SettingSelect} from './components';
+// @ts-ignore
 import StyleRaw from './style.css?raw';
 
 // 打开设置界面时触发
@@ -30,18 +31,14 @@ async function onSettingWindowCreated(view: Element) {
     const doc = parser.parseFromString([
         '<div>',
         `<style>${StyleRaw}</style>`,
-        `<setting-section>
-            <setting-panel>
-                <setting-list data-direction="column" class="new">
-                    <setting-item data-direction="row">
-                        <setting-text class="llonebot-update-title">正在检查LLOneBot版本中</setting-text>
-                        <setting-button data-type="secondary" class="llonebot-update-button">请稍后</setting-button>
-                    </setting-item>
-                </setting-list>
-             </setting-panel>
-        <setting-section>`,
+        `<setting-section id="llonebot-error">
+            <setting-panel><pre><code></code></pre></setting-panel>
+        </setting-section>`,
         SettingList([
-           '<div id="llonebot-error" class="llonebot-error"></div>',
+            SettingItem(
+                '<span id="llonebot-update-title">正在检查 LLOneBot 更新</span>', null,
+                SettingButton('请稍候', 'llonebot-update-button', 'secondary'),
+            ),
         ]),
         SettingList([
             SettingItem('启用 HTTP 服务', null,
@@ -98,7 +95,7 @@ async function onSettingWindowCreated(view: Element) {
                 `<div class="q-input" style="width:210px;"><input class="q-input__inner" data-config-key="token" type="text" value="${config.token}" placeholder="未设置" /></div>`,
             ),
             SettingItem(
-                '启用CQ码上报格式，不启用则为消息段格式',
+                '新消息上报格式',
                 '如客户端无特殊需求推荐保持默认设置，两者的详细差异可参考 <a href="javascript:LiteLoader.api.openExternal(\'https://github.com/botuniverse/onebot-11/tree/master/message#readme\');">OneBot v11 文档</a>',
                 SettingSelect([
                     {text: '消息段', value: 'array'},
@@ -122,7 +119,7 @@ async function onSettingWindowCreated(view: Element) {
             ),
             SettingItem(
                 '使用 Base64 编码获取文件',
-                '开启后，调用 /get_image、/get_record 时，获取不到 url 时添加一个 Base64 字段',
+                '调用 /get_image、/get_record、/get_file 时，没有 url 时添加 Base64 字段',
                 SettingSwitch('enableLocalFile2Url', config.enableLocalFile2Url),
             ),
             SettingItem(
@@ -153,7 +150,7 @@ async function onSettingWindowCreated(view: Element) {
             ),
             SettingItem(
                 '日志文件目录',
-                `${window.LiteLoader.plugins['LLOneBot'].path.data}`,
+                `${window.LiteLoader.plugins['LLOneBot'].path.data}/logs`,
                 SettingButton('打开', 'config-open-log-path'),
             ),
         ]),
@@ -182,18 +179,20 @@ async function onSettingWindowCreated(view: Element) {
         '</div>',
     ].join(''), "text/html");
 
-    let errorEle = <HTMLElement>doc.querySelector("#llonebot-error");
-    errorEle.style.display = 'none';
     const showError = async () => {
-        setTimeout(async () => {
-            let errMessage = await window.llonebot.getError();
-            console.log(errMessage)
-            errMessage = errMessage.replace(/\n/g, '<br>')
-            errorEle.innerHTML = errMessage;
-            errorEle.style.display = errMessage ? 'flex' : 'none';
-        }, 1000)
+        await (new Promise((res) => setTimeout(() => res(true), 1000)));
+
+        const errDom = doc.querySelector('#llonebot-error');
+        const errCodeDom = errDom.querySelector('code');
+        const errMsg = await window.llonebot.getError();
+
+        if (!errMsg) return;
+
+        errDom.classList.add('show');
+        errCodeDom.innerHTML = errMsg;
     }
-    showError().then()
+    showError().then();
+
     // 外链按钮
     doc.querySelector('#open-github').addEventListener('click', () => {
         window.LiteLoader.api.openExternal('https://github.com/LLOneBot/LLOneBot')
@@ -335,33 +334,39 @@ async function onSettingWindowCreated(view: Element) {
     });
     // 更新逻辑
     async function checkVersionFunc(ResultVersion: CheckVersion) {
-        console.log(ResultVersion);
+        const titleDom = view.querySelector<HTMLSpanElement>("#llonebot-update-title")!;
+        const buttonDom = view.querySelector<HTMLButtonElement>("#llonebot-update-button")!;
+
         if (ResultVersion.version === "") {
-            view.querySelector(".llonebot-update-title").innerHTML = "检查更新失败";
-            view.querySelector(".llonebot-update-button").innerHTML = "点击重试";
-            view.querySelector(".llonebot-update-button").addEventListener("click", async () => {
+            titleDom.innerHTML = "检查更新失败";
+            buttonDom.innerHTML = "点击重试";
+
+            buttonDom.addEventListener("click", async () => {
                 window.llonebot.checkVersion().then(checkVersionFunc);
             });
+
             return;
         }
         if (!ResultVersion.result) {
-            view.querySelector(".llonebot-update-title").innerHTML = "当前已是最新版本 V" + ResultVersion.version;
-            view.querySelector(".llonebot-update-button").innerHTML = "无需更新";
+            titleDom.innerHTML = "当前已是最新版本 v" + ResultVersion.version;
+            buttonDom.innerHTML = "无需更新";
         } else {
-            view.querySelector(".llonebot-update-title").innerHTML = "已检测到最新版本 V" + ResultVersion.version;
-            view.querySelector(".llonebot-update-button").innerHTML = "点击更新";
+            titleDom.innerHTML = "已检测到最新版本 v" + ResultVersion.version;
+            buttonDom.innerHTML = "点击更新";
+            buttonDom.dataset.type = 'primary';
+
             const update = async () => {
-                view.querySelector(".llonebot-update-button").innerHTML = "正在更新中...";
+                buttonDom.innerHTML = "正在更新中...";
                 const result = await window.llonebot.updateLLOneBot();
                 if (result) {
-                    view.querySelector(".llonebot-update-button").innerHTML = "更新完成请重启";
-                    view.querySelector(".llonebot-update-button").removeEventListener("click", update);
+                    buttonDom.innerHTML = "更新完成，请重启";
                 } else {
-                    view.querySelector(".llonebot-update-button").innerHTML = "更新失败前往仓库下载";
-                    view.querySelector(".llonebot-update-button").removeEventListener("click", update);
+                    buttonDom.innerHTML = "更新失败，前往仓库下载";
                 }
+
+                buttonDom.removeEventListener("click", update);
             }
-            view.querySelector(".llonebot-update-button").addEventListener("click", update);
+            buttonDom.addEventListener("click", update);
         }
     }
     window.llonebot.checkVersion().then(checkVersionFunc);
@@ -369,7 +374,6 @@ async function onSettingWindowCreated(view: Element) {
         if (JSON.stringify(ob11Config) === JSON.stringify(config.ob11)) return;
         config.ob11 = ob11Config;
         window.llonebot.setConfig(true, config);
-
     });
 
 }

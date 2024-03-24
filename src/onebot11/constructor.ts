@@ -19,7 +19,7 @@ import {
     SelfInfo,
     Sex,
     TipGroupElementType,
-    User
+    User, VideoElement
 } from '../ntqqapi/types';
 import {getFriend, getGroupMember, selfInfo, tempGroupCodeMap} from '../common/data';
 import {EventType} from "./event/OB11BaseEvent";
@@ -35,6 +35,8 @@ import {calcQQLevel} from "../common/utils/qqlevel";
 import {log} from "../common/utils/log";
 import {sleep} from "../common/utils/helper";
 import {getConfigUtil} from "../common/config";
+import {OB11GroupTitleEvent} from "./event/notice/OB11GroupTitleEvent";
+import {OB11GroupCardEvent} from "./event/notice/OB11GroupCardEvent";
 
 
 export class OB11Constructor {
@@ -155,37 +157,25 @@ export class OB11Constructor {
                 }).then()
                 // 不在自动下载图片
 
-            } else if (element.videoElement) {
-                message_data["type"] = OB11MessageDataType.video;
-                message_data["data"]["file"] = element.videoElement.fileName
-                message_data["data"]["path"] = element.videoElement.filePath
-                // message_data["data"]["file_id"] = element.videoElement.fileUuid
-                message_data["data"]["file_size"] = element.videoElement.fileSize
-                dbUtil.addFileCache(element.videoElement.fileName, {
-                    fileName: element.videoElement.fileName,
-                    filePath: element.videoElement.filePath,
-                    fileSize: element.videoElement.fileSize,
-                    downloadFunc: async () => {
-                        await NTQQFileApi.downloadMedia(msg.msgId, msg.chatType, msg.peerUid,
-                            element.elementId, element.videoElement.thumbPath.get(0), element.videoElement.filePath)
-                    }
-                }).then()
-                // 怎么拿到url呢
-            } else if (element.fileElement) {
-                message_data["type"] = OB11MessageDataType.file;
-                message_data["data"]["file"] = element.fileElement.fileName
-                // message_data["data"]["path"] = element.fileElement.filePath
-                message_data["data"]["file_id"] = element.fileElement.fileUuid
-                message_data["data"]["file_size"] = element.fileElement.fileSize
-                dbUtil.addFileCache(element.fileElement.fileUuid, {
+            } else if (element.videoElement || element.fileElement) {
+                const videoOrFileElement = element.videoElement || element.fileElement
+                const ob11MessageDataType = element.videoElement ? OB11MessageDataType.video : OB11MessageDataType.file
+                message_data["type"] = ob11MessageDataType;
+                message_data["data"]["file"] = videoOrFileElement.fileName
+                message_data["data"]["path"] = videoOrFileElement.filePath
+                message_data["data"]["file_id"] = videoOrFileElement.fileUuid
+                message_data["data"]["file_size"] = videoOrFileElement.fileSize
+                dbUtil.addFileCache(videoOrFileElement.fileUuid, {
                     msgId: msg.msgId,
-                    fileName: element.fileElement.fileName,
-                    fileUuid: element.fileElement.fileUuid,
-                    filePath: element.fileElement.filePath,
-                    fileSize: element.fileElement.fileSize,
+                    fileName: videoOrFileElement.fileName,
+                    filePath: videoOrFileElement.filePath,
+                    fileSize: videoOrFileElement.fileSize,
                     downloadFunc: async () => {
-                        await NTQQFileApi.downloadMedia(msg.msgId, msg.chatType, msg.peerUid,
-                            element.elementId, null, element.fileElement.filePath)
+                        await NTQQFileApi.downloadMedia(
+                            msg.msgId, msg.chatType, msg.peerUid,
+                            element.elementId,
+                            ob11MessageDataType == OB11MessageDataType.video ? (videoOrFileElement as VideoElement).thumbPath.get(0) : null,
+                            videoOrFileElement.filePath)
                     }
                 }).then()
                 // 怎么拿到url呢
@@ -230,6 +220,13 @@ export class OB11Constructor {
     static async GroupEvent(msg: RawMessage): Promise<OB11GroupNoticeEvent> {
         if (msg.chatType !== ChatType.group) {
             return;
+        }
+        if (msg.senderUin){
+            let member = await getGroupMember(msg.peerUid, msg.senderUin);
+            if (member && member.cardName !== msg.sendMemberName) {
+                member.cardName = msg.sendMemberName;
+                return new OB11GroupCardEvent(parseInt(msg.peerUid), parseInt(msg.senderUin), msg.sendMemberName, member.cardName)
+            }
         }
         // log("group msg", msg);
         for (let element of msg.elements) {
@@ -278,7 +275,8 @@ export class OB11Constructor {
                 return new OB11GroupUploadNoticeEvent(parseInt(msg.peerUid), parseInt(msg.senderUin), {
                     id: element.fileElement.fileUuid,
                     name: element.fileElement.fileName,
-                    size: parseInt(element.fileElement.fileSize)
+                    size: parseInt(element.fileElement.fileSize),
+                    busid: element.fileElement.fileBizId || 0
                 })
             }
 
@@ -300,6 +298,36 @@ export class OB11Constructor {
                             return new OB11GroupIncreaseEvent(parseInt(msg.peerUid), parseInt(invitee), parseInt(inviter), "invite");
                         }
                     }
+                } else if (grayTipElement.subElementType == GrayTipElementSubType.MEMBER_NEW_TITLE) {
+                    const json = JSON.parse(grayTipElement.jsonGrayTipElement.jsonStr)
+                    /*
+                    {
+                      align: 'center',
+                      items: [
+                        { txt: '恭喜', type: 'nor' },
+                        {
+                          col: '3',
+                          jp: '5',
+                          param: ["QQ号"],
+                          txt: '林雨辰',
+                          type: 'url'
+                        },
+                        { txt: '获得群主授予的', type: 'nor' },
+                        {
+                          col: '3',
+                          jp: '',
+                          txt: '好好好',
+                          type: 'url'
+                        },
+                        { txt: '头衔', type: 'nor' }
+                      ]
+                    }
+
+                    * */
+                    const memberUin = json.items[1].param[0]
+                    const title = json.items[3].txt
+                    log("收到群成员新头衔消息", json)
+                    return new OB11GroupTitleEvent(parseInt(msg.peerUid), parseInt(memberUin), title)
                 }
             }
         }

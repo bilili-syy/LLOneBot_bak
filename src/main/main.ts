@@ -18,7 +18,7 @@ import {
     friendRequests,
     getFriend,
     getGroup,
-    getGroupMember,
+    getGroupMember, groups,
     llonebotError,
     refreshGroupMembers,
     selfInfo, uidMaps
@@ -107,8 +107,8 @@ function onLoad() {
         const config = getConfigUtil().getConfig()
         return config;
     })
-    ipcMain.on(CHANNEL_SET_CONFIG, (event, ask:boolean, config: Config) => {
-        if (!ask){
+    ipcMain.on(CHANNEL_SET_CONFIG, (event, ask: boolean, config: Config) => {
+        if (!ask) {
             setConfig(config).then();
             return
         }
@@ -218,7 +218,6 @@ function onLoad() {
                             parseInt(operatorId),
                             oriMessage.msgShortId
                         )
-
                         postOB11Event(groupRecallEvent);
                     }
                     // 不让入库覆盖原来消息，不然就获取不到撤回的消息内容了
@@ -359,13 +358,19 @@ function onLoad() {
         log("llonebot pid", process.pid)
         llonebotError.otherError = "";
         startTime = Date.now();
-        dbUtil.getReceivedTempUinMap().then(m=>{
+        dbUtil.getReceivedTempUinMap().then(m => {
             for (const [key, value] of Object.entries(m)) {
                 uidMaps[value] = key;
             }
         })
         startReceiveHook().then();
-        NTQQGroupApi.getGroups(true).then()
+        // NTQQGroupApi.getGroups(true).then(_groups => {
+        //     _groups.map(group => {
+        //         if (!groups.find(g => g.groupCode == group.groupCode)) {
+        //             groups.push(group)
+        //         }
+        //     })
+        // })
         const config = getConfigUtil().getConfig()
         if (config.ob11.enableHttp) {
             ob11HTTPServer.start(config.ob11.httpPort)
@@ -391,23 +396,31 @@ function onLoad() {
         } catch (e) {
             log("retry get self info", e);
         }
-        log("self info", selfInfo);
+        if (!selfInfo.uin) {
+            selfInfo.uin = globalThis.authData?.uin;
+            selfInfo.uid = globalThis.authData?.uid;
+            selfInfo.nick = selfInfo.uin;
+        }
+        log("self info", selfInfo, globalThis.authData);
         if (selfInfo.uin) {
-            try {
-                const userInfo = (await NTQQUserApi.getUserDetailInfo(selfInfo.uid));
-                log("self info", userInfo);
-                if (userInfo) {
-                    selfInfo.nick = userInfo.nick;
-                } else {
+            async function getUserNick() {
+                try {
                     getSelfNickCount++;
-                    if (getSelfNickCount < 10) {
-                        return setTimeout(init, 1000);
+                    const userInfo = (await NTQQUserApi.getUserDetailInfo(selfInfo.uid));
+                    log("self info", userInfo);
+                    if (userInfo) {
+                        selfInfo.nick = userInfo.nick;
+                        return
                     }
+                } catch (e) {
+                    log("get self nickname failed", e.stack);
                 }
-            } catch (e) {
-                log("get self nickname failed", e.toString());
-                return setTimeout(init, 1000);
+                if (getSelfNickCount < 10) {
+                    return setTimeout(getUserNick, 1000);
+                }
             }
+
+            getUserNick().then()
             start().then();
         } else {
             setTimeout(init, 1000)

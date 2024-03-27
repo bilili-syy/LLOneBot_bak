@@ -1,4 +1,4 @@
-import {RawMessage} from "../ntqqapi/types";
+import {PicSubType, RawMessage} from "../ntqqapi/types";
 import {EventType} from "./event/OB11BaseEvent";
 
 export interface OB11User {
@@ -108,10 +108,16 @@ export enum OB11MessageDataType {
     reply = "reply",
     json = "json",
     face = "face",
-    mface = "face", // 商城表情
+    mface = "mface", // 商城表情
     node = "node",  // 合并转发消息
 }
 
+export interface OB11MessageMFace{
+    type: OB11MessageDataType.mface,
+    data: {
+        text: string
+    }
+}
 export interface OB11MessageText {
     type: OB11MessageDataType.text,
     data: {
@@ -128,11 +134,13 @@ interface OB11MessageFileBase {
     }
 }
 
+
 export interface OB11MessageImage extends OB11MessageFileBase {
     type: OB11MessageDataType.image
     data: OB11MessageFileBase['data'] & {
         summary ? : string; // 图片摘要
-    }
+        subType?: PicSubType
+    },
 }
 
 export interface OB11MessageRecord extends OB11MessageFileBase {
@@ -199,7 +207,7 @@ export interface OB11MessageJson {
 
 export type OB11MessageData =
     OB11MessageText |
-    OB11MessageFace |
+    OB11MessageFace | OB11MessageMFace |
     OB11MessageAt | OB11MessageReply |
     OB11MessageImage | OB11MessageRecord | OB11MessageFile | OB11MessageVideo |
     OB11MessageNode | OB11MessageCustomMusic | OB11MessageJson

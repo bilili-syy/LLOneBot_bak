@@ -1,4 +1,5 @@
 import {GroupMemberRole} from "./group";
+import exp from "constants";
 
 export enum ElementType {
     TEXT = 1,
@@ -48,24 +49,29 @@ export enum PicType {
     jpg = 1000
 }
 
+export enum PicSubType {
+    normal = 0, // 普通图片，大图
+    face = 1  // 表情包小图
+}
+
 export interface SendPicElement {
     elementType: ElementType.PIC,
     elementId: "",
     picElement: {
         md5HexStr: string,
-        fileSize: number,
+        fileSize: number | string,
         picWidth: number,
         picHeight: number,
         fileName: string,
         sourcePath: string,
         original: boolean,
         picType: PicType,
-        picSubType: number,
+        picSubType: PicSubType,
         fileUuid: string,
         fileSubId: string,
         thumbFileSize: number,
         summary: string,
-    }
+    },
 }
 
 export interface SendReplyElement {
@@ -199,7 +205,7 @@ export interface GrayTipElement {
     xmlElement: {
         content: string;
     },
-    jsonGrayTipElement:{
+    jsonGrayTipElement: {
         jsonStr: string;
     }
 }
@@ -207,6 +213,45 @@ export interface GrayTipElement {
 export interface FaceElement {
     faceIndex: number,
     faceType: 1
+}
+
+export interface MarketFaceElement {
+    "itemType": 6,
+    "faceInfo": 1,
+    "emojiPackageId": 203875,
+    "subType": 3,
+    "mediaType": 0,
+    "imageWidth": 200,
+    "imageHeight": 200,
+    "faceName": string,
+    "emojiId": "094d53bd1c9ac5d35d04b08e8a6c992c",
+    "key": "a8b1dd0aebc8d910",
+    "param": null,
+    "mobileParam": null,
+    "sourceType": null,
+    "startTime": null,
+    "endTime": null,
+    "emojiType": 1,
+    "hasIpProduct": null,
+    "voiceItemHeightArr": null,
+    "sourceName": null,
+    "sourceJumpUrl": null,
+    "sourceTypeName": null,
+    "backColor": null,
+    "volumeColor": null,
+    "staticFacePath": "E:\\SystemDocuments\\QQ\\721011692\\nt_qq\\nt_data\\Emoji\\marketface\\203875\\094d53bd1c9ac5d35d04b08e8a6c992c_aio.png",
+    "dynamicFacePath": "E:\\SystemDocuments\\QQ\\721011692\\nt_qq\\nt_data\\Emoji\\marketface\\203875\\094d53bd1c9ac5d35d04b08e8a6c992c",
+    "supportSize": [
+        {
+            "width": 300,
+            "height": 300
+        },
+        {
+            "width": 200,
+            "height": 200
+        }
+    ],
+    "apngSupportSize": null
 }
 
 export interface VideoElement {
@@ -321,5 +366,6 @@ export interface RawMessage {
         faceElement: FaceElement;
         videoElement: VideoElement;
         fileElement: FileElement;
+        marketFaceElement: MarketFaceElement;
     }[];
 }

@@ -16,17 +16,38 @@ export interface Peer {
 }
 
 export class NTQQMsgApi {
-    static async activateGroupChat(groupCode: string) {
+    static async getMultiMsg(peer: Peer, rootMsgId: string, parentMsgId: string) {
+        return await callNTQQApi<GeneralCallResult & {msgList: RawMessage[]}>({
+            methodName: NTQQApiMethod.GET_MULTI_MSG,
+            args: [{
+                peer,
+                rootMsgId,
+                parentMsgId
+            }, null]
+        })
+    }
+
+    static async activateChat(peer: Peer) {
         // await this.fetchRecentContact();
         // await sleep(500);
         return await callNTQQApi<GeneralCallResult>({
-            methodName: NTQQApiMethod.ADD_ACTIVE_CHAT,
-            args: [{peer:{peerUid: groupCode, chatType: ChatType.group}, cnt: 20}, null]
+            methodName: NTQQApiMethod.ACTIVE_CHAT_PREVIEW,
+            args: [{peer, cnt: 20}, null]
+        })
+    }
+    static async activateChatAndGetHistory(peer: Peer) {
+        // await this.fetchRecentContact();
+        // await sleep(500);
+        return await callNTQQApi<GeneralCallResult>({
+            methodName: NTQQApiMethod.ACTIVE_CHAT_HISTORY,
+            // 参数似乎不是这样
+            args: [{peer, cnt: 20}, null]
         })
     }
     static async getMsgHistory(peer: Peer, msgId: string, count: number) {
+        // 消息时间从旧到新
         return await callNTQQApi<GeneralCallResult & {msgList: RawMessage[]}>({
-            methodName: isQQ998 ? NTQQApiMethod.HISTORY_MSG_998 : NTQQApiMethod.HISTORY_MSG,
+            methodName: isQQ998 ? NTQQApiMethod.ACTIVE_CHAT_HISTORY : NTQQApiMethod.HISTORY_MSG,
             args: [{
                 peer,
                 msgId,

@@ -88,6 +88,10 @@ export interface OB11Message {
     raw?: RawMessage
 }
 
+export interface OB11ForwardMessage extends OB11Message {
+    content: OB11MessageData[] | string;
+}
+
 export interface OB11Return<DataType> {
     status: string
     retcode: number
@@ -109,7 +113,13 @@ export enum OB11MessageDataType {
     json = "json",
     face = "face",
     mface = "mface", // 商城表情
-    node = "node",  // 合并转发消息
+    markdown = "markdown",
+    node = "node",  // 合并转发消息节点
+    forward = "forward",  // 合并转发消息，用于上报
+    xml = "xml",
+    poke = "poke",
+    dice = "dice",
+    RPS = "rps"
 }
 
 export interface OB11MessageMFace{
@@ -118,10 +128,32 @@ export interface OB11MessageMFace{
         text: string
     }
 }
+
+export interface OB11MessageDice{
+    type: OB11MessageDataType.dice,
+    data: {
+        result: number
+    }
+}
+export interface OB11MessageRPS{
+    type: OB11MessageDataType.RPS,
+    data: {
+        result: number
+    }
+}
+
 export interface OB11MessageText {
     type: OB11MessageDataType.text,
     data: {
         text: string, // 纯文本
+    }
+}
+
+export interface OB11MessagePoke{
+    type: OB11MessageDataType.poke
+    data: {
+        qq?: number,
+        id?: number
     }
 }
 
@@ -210,7 +242,8 @@ export type OB11MessageData =
     OB11MessageFace | OB11MessageMFace |
     OB11MessageAt | OB11MessageReply |
     OB11MessageImage | OB11MessageRecord | OB11MessageFile | OB11MessageVideo |
-    OB11MessageNode | OB11MessageCustomMusic | OB11MessageJson
+    OB11MessageNode | OB11MessageCustomMusic | OB11MessageJson | OB11MessagePoke |
+    OB11MessageDice | OB11MessageRPS
 
 export interface OB11PostSendMsg {
     message_type?: "private" | "group"
@@ -218,6 +251,7 @@ export interface OB11PostSendMsg {
     group_id?: string,
     message: OB11MessageMixType;
     messages?: OB11MessageMixType;  // 兼容 go-cqhttp
+    auto_escape?: boolean
 }
 
 export interface OB11Version {

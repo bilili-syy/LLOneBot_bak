@@ -10,16 +10,17 @@ import {
 } from "./types";
 import {
     AtType,
-    ChatType,
+    ChatType, FaceIndex,
     GrayTipElementSubType,
     Group,
     GroupMember,
-    IMAGE_HTTP_HOST,
+    IMAGE_HTTP_HOST, IMAGE_HTTP_HOST_NT,
     RawMessage,
     SelfInfo,
     Sex,
     TipGroupElementType,
-    User, VideoElement
+    User,
+    VideoElement
 } from '../ntqqapi/types';
 import {getFriend, getGroupMember, selfInfo, tempGroupCodeMap} from '../common/data';
 import {EventType} from "./event/OB11BaseEvent";
@@ -37,12 +38,14 @@ import {sleep} from "../common/utils/helper";
 import {getConfigUtil} from "../common/config";
 import {OB11GroupTitleEvent} from "./event/notice/OB11GroupTitleEvent";
 import {OB11GroupCardEvent} from "./event/notice/OB11GroupCardEvent";
+import {OB11GroupDecreaseEvent} from "./event/notice/OB11GroupDecreaseEvent";
 
+let lastRKeyUpdateTime = 0;
 
 export class OB11Constructor {
     static async message(msg: RawMessage): Promise<OB11Message> {
-
-        const {enableLocalFile2Url, ob11: {messagePostFormat}} = getConfigUtil().getConfig()
+        let config = getConfigUtil().getConfig();
+        const {enableLocalFile2Url, ob11: {messagePostFormat}} = config;
         const message_type = msg.chatType == ChatType.group ? "group" : "private";
         const resMsg: OB11Message = {
             self_id: parseInt(selfInfo.uin),
@@ -138,9 +141,32 @@ export class OB11Constructor {
                 // message_data["data"]["path"] = element.picElement.sourcePath
                 const url = element.picElement.originImageUrl
                 const fileMd5 = element.picElement.md5HexStr
+                const fileUuid = element.picElement.fileUuid
+                // let currentRKey = config.imageRKey || "CAQSKAB6JWENi5LMk0kc62l8Pm3Jn1dsLZHyRLAnNmHGoZ3y_gDZPqZt-64"
+                let currentRKey = "CAQSKAB6JWENi5LMk0kc62l8Pm3Jn1dsLZHyRLAnNmHGoZ3y_gDZPqZt-64"
                 if (url) {
-                    message_data["data"]["url"] = IMAGE_HTTP_HOST + url
-                } else if (fileMd5 && element.picElement.fileUuid.indexOf("_") === -1) { // fileuuid有下划线的是Linux发送的，这个url是另外的格式，目前尚未得知如何组装
+                    if (url.startsWith("/download")) {
+                        if (url.includes("&rkey=")) {
+                            // 正则提取rkey
+                            // const rkey = url.match(/&rkey=([^&]+)/)[1]
+                            // // log("图片url已有rkey", rkey)
+                            // if (rkey != currentRKey){
+                            //     config.imageRKey = rkey
+                            //     if (Date.now() - lastRKeyUpdateTime > 1000 * 60) {
+                            //         lastRKeyUpdateTime = Date.now()
+                            //         getConfigUtil().setConfig(config)
+                            //     }
+                            // }
+                            message_data["data"]["url"] = IMAGE_HTTP_HOST + url
+                        }
+                        else{
+                            // 有可能会碰到appid为1406的，这个不能使用新的NT域名，并且需要把appid改为1407才可访问
+                            message_data["data"]["url"] = `${IMAGE_HTTP_HOST}/download?appid=1407&fileid=${fileUuid}&rkey=${currentRKey}&spec=0`
+                        }
+                    } else {
+                        message_data["data"]["url"] = IMAGE_HTTP_HOST + url
+                    }
+                } else if (fileMd5) {
                     message_data["data"]["url"] = `${IMAGE_HTTP_HOST}/gchatpic_new/0/0-0-${fileMd5.toUpperCase()}/0`
                 }
                 // message_data["data"]["file_id"] = element.picElement.fileUuid
@@ -201,11 +227,28 @@ export class OB11Constructor {
                 message_data["type"] = OB11MessageDataType.json;
                 message_data["data"]["data"] = element.arkElement.bytesData;
             } else if (element.faceElement) {
-                message_data["type"] = OB11MessageDataType.face;
-                message_data["data"]["id"] = element.faceElement.faceIndex.toString();
+                const faceId = element.faceElement.faceIndex;
+                if (faceId === FaceIndex.dice){
+                    message_data["type"] = OB11MessageDataType.dice
+                    message_data["data"]["result"] = element.faceElement.resultId;
+                }
+                else if (faceId === FaceIndex.RPS){
+                    message_data["type"] = OB11MessageDataType.RPS
+                    message_data["data"]["result"] = element.faceElement.resultId;
+                }
+                else{
+                    message_data["type"] = OB11MessageDataType.face;
+                    message_data["data"]["id"] = element.faceElement.faceIndex.toString();
+                }
             } else if (element.marketFaceElement) {
                 message_data["type"] = OB11MessageDataType.mface;
                 message_data["data"]["text"] = element.marketFaceElement.faceName;
+            } else if (element.markdownElement){
+                message_data["type"] = OB11MessageDataType.markdown;
+                message_data["data"]["data"] = element.markdownElement.content;
+            } else if (element.multiForwardMsgElement){
+                message_data["type"] = OB11MessageDataType.forward;
+                message_data["data"]["id"] = msg.msgId
             }
             if (message_data.type !== "unknown" && message_data.data) {
                 const cqCode = encodeCQCode(message_data);
@@ -275,6 +318,13 @@ export class OB11Constructor {
                         return new OB11GroupBanEvent(parseInt(msg.peerUid), parseInt(memberUin), parseInt(adminUin), duration, sub_type);
                     }
                 }
+                else if (groupElement.type == TipGroupElementType.kicked){
+                    log("收到我被踢出提示", groupElement)
+                    const adminUin = (await getGroupMember(msg.peerUid, groupElement.adminUid))?.uin || (await NTQQUserApi.getUserDetailInfo(groupElement.adminUid))?.uin
+                    if (adminUin) {
+                        return new OB11GroupDecreaseEvent(parseInt(msg.peerUid), parseInt(selfInfo.uin), parseInt(adminUin), "kick_me");
+                    }
+                }
             } else if (element.fileElement) {
                 return new OB11GroupUploadNoticeEvent(parseInt(msg.peerUid), parseInt(msg.senderUin), {
                     id: element.fileElement.fileUuid,
@@ -297,6 +347,7 @@ export class OB11Constructor {
                         while ((match = regex.exec(xmlElement.content)) !== null) {
                             matches.push(match[1]);
                         }
+                        // log("新人进群匹配到的QQ号", matches)
                         if (matches.length === 2) {
                             const [inviter, invitee] = matches;
                             return new OB11GroupIncreaseEvent(parseInt(msg.peerUid), parseInt(invitee), parseInt(inviter), "invite");
@@ -331,6 +382,9 @@ export class OB11Constructor {
                     const memberUin = json.items[1].param[0]
                     const title = json.items[3].txt
                     log("收到群成员新头衔消息", json)
+                    getGroupMember(msg.peerUid, memberUin).then(member => {
+                        member.memberSpecialTitle = title
+                    })
                     return new OB11GroupTitleEvent(parseInt(msg.peerUid), parseInt(memberUin), title)
                 }
             }
@@ -394,6 +448,7 @@ export class OB11Constructor {
             is_robot: member.isRobot,
             shut_up_timestamp: member.shutUpTime,
             role: OB11Constructor.groupMemberRole(member.role),
+            title: member.memberSpecialTitle || "",
         }
     }
 

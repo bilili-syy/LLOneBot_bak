@@ -2,19 +2,15 @@ import {
     AtType,
     ChatType,
     ElementType,
-    Group, PicSubType,
+    Friend,
+    Group,
+    GroupMemberRole,
+    PicSubType,
     RawMessage,
     SendArkElement,
     SendMessageElement
 } from "../../../ntqqapi/types";
-import {
-    friends,
-    getFriend,
-    getGroup,
-    getGroupMember,
-    getUidByUin,
-    selfInfo,
-} from "../../../common/data";
+import {friends, getFriend, getGroup, getGroupMember, getUidByUin, selfInfo,} from "../../../common/data";
 import {
     OB11MessageCustomMusic,
     OB11MessageData,
@@ -23,7 +19,7 @@ import {
     OB11MessageNode,
     OB11PostSendMsg
 } from '../../types';
-import {Peer} from "../../../ntqqapi/api/msg";
+import {NTQQMsgApi, Peer} from "../../../ntqqapi/api/msg";
 import {SendMsgElementConstructor} from "../../../ntqqapi/constructor";
 import BaseAction from "../BaseAction";
 import {ActionName, BaseCheckResult} from "../types";
@@ -31,10 +27,11 @@ import * as fs from "node:fs";
 import {decodeCQCode} from "../../cqcode";
 import {dbUtil} from "../../../common/db";
 import {ALLOW_SEND_TEMP_MSG} from "../../../common/config";
-import {NTQQMsgApi} from "../../../ntqqapi/api/msg";
 import {log} from "../../../common/utils/log";
 import {sleep} from "../../../common/utils/helper";
 import {uri2local} from "../../../common/utils";
+import {crychic} from "../../../ntqqapi/external/crychic";
+import {NTQQGroupApi} from "../../../ntqqapi/api";
 
 function checkSendMessage(sendMsgList: OB11MessageData[]) {
     function checkUri(uri: string): boolean {
@@ -93,7 +90,7 @@ export function convertMessage2List(message: OB11MessageMixType, autoEscape = fa
     return message;
 }
 
-export async function createSendElements(messageData: OB11MessageData[], group: Group | undefined, ignoreTypes: OB11MessageDataType[] = []) {
+export async function createSendElements(messageData: OB11MessageData[], target: Group | Friend | undefined, ignoreTypes: OB11MessageDataType[] = []) {
     let sendElements: SendMessageElement[] = []
     let deleteAfterSentFiles: string[] = []
     for (let sendMsg of messageData) {
@@ -109,17 +106,31 @@ export async function createSendElements(messageData: OB11MessageData[], group: 
             }
                 break;
             case OB11MessageDataType.at: {
-                if (!group) {
+                if (!target) {
                     continue
                 }
                 let atQQ = sendMsg.data?.qq;
                 if (atQQ) {
                     atQQ = atQQ.toString()
                     if (atQQ === "all") {
-                        sendElements.push(SendMsgElementConstructor.at(atQQ, atQQ, AtType.atAll, "全体成员"))
+                        // todo：查询剩余的at全体次数
+                        const groupCode = (target as Group)?.groupCode;
+                        let remainAtAllCount = 1
+                        let isAdmin: boolean = true;
+                        if (groupCode) {
+                            try {
+                                remainAtAllCount = (await NTQQGroupApi.getGroupAtAllRemainCount(groupCode)).atInfo.RemainAtAllCountForUin
+                                log(`群${groupCode}剩余at全体次数`, remainAtAllCount);
+                                const self = await getGroupMember((target as Group)?.groupCode, selfInfo.uin);
+                                isAdmin = self.role === GroupMemberRole.admin || self.role === GroupMemberRole.owner;
+                            } catch (e) {}
+                        }
+                        if(isAdmin && remainAtAllCount > 0) {
+                            sendElements.push(SendMsgElementConstructor.at(atQQ, atQQ, AtType.atAll, "全体成员"))
+                        }
                     } else {
                         // const atMember = group?.members.find(m => m.uin == atQQ)
-                        const atMember = await getGroupMember(group?.groupCode, atQQ);
+                        const atMember = await getGroupMember((target as Group)?.groupCode, atQQ);
                         if (atMember) {
                             sendElements.push(SendMsgElementConstructor.at(atQQ, atMember.uid, AtType.atUser, atMember.cardName || atMember.nick))
                         }
@@ -197,7 +208,30 @@ export async function createSendElements(messageData: OB11MessageData[], group: 
             case OB11MessageDataType.json: {
                 sendElements.push(SendMsgElementConstructor.ark(sendMsg.data.data))
             }
-                break
+                break;
+            case OB11MessageDataType.poke: {
+                let qq = sendMsg.data?.qq || sendMsg.data?.id
+                if (qq) {
+                    if ("groupCode" in target) {
+                        crychic.sendGroupPoke(target.groupCode, qq.toString())
+                    } else {
+                        if (!qq) {
+                            qq = parseInt(target.uin)
+                        }
+                        crychic.sendFriendPoke(qq.toString())
+                    }
+                    sendElements.push(SendMsgElementConstructor.poke("", ""))
+                }
+            }
+                break;
+            case OB11MessageDataType.dice:{
+                const resultId = sendMsg.data?.result
+                sendElements.push(SendMsgElementConstructor.dice(resultId));
+            }break;
+            case OB11MessageDataType.RPS:{
+                const resultId = sendMsg.data?.result
+                sendElements.push(SendMsgElementConstructor.rps(resultId));
+            }break;
         }
 
     }
@@ -232,7 +266,7 @@ export class SendMsg extends BaseAction<OB11PostSendMsg, ReturnDataType> {
                 message: "转发消息不能和普通消息混在一起发送,转发需要保证message只有type为node的元素"
             }
         }
-        if (payload.message_type !== "private" && payload.group_id &&!(await getGroup(payload.group_id))) {
+        if (payload.message_type !== "private" && payload.group_id && !(await getGroup(payload.group_id))) {
             return {
                 valid: false,
                 message: `群${payload.group_id}不存在`
@@ -261,6 +295,7 @@ export class SendMsg extends BaseAction<OB11PostSendMsg, ReturnDataType> {
         }
         let isTempMsg = false;
         let group: Group | undefined = undefined;
+        let friend: Friend | undefined = undefined;
         const genGroupPeer = async () => {
             group = await getGroup(payload.group_id.toString())
             peer.chatType = ChatType.group
@@ -269,7 +304,7 @@ export class SendMsg extends BaseAction<OB11PostSendMsg, ReturnDataType> {
         }
 
         const genFriendPeer = () => {
-            const friend = friends.find(f => f.uin == payload.user_id.toString())
+            friend = friends.find(f => f.uin == payload.user_id.toString())
             if (friend) {
                 // peer.name = friend.nickName
                 peer.peerUid = friend.uid
@@ -294,7 +329,7 @@ export class SendMsg extends BaseAction<OB11PostSendMsg, ReturnDataType> {
         } else {
             throw ("发送消息参数错误, 请指定group_id或user_id")
         }
-        const messages = convertMessage2List(payload.message);
+        const messages = convertMessage2List(payload.message, !!payload.auto_escape);
         if (this.getSpecialMsgNum(payload, OB11MessageDataType.node)) {
             try {
                 const returnMsg = await this.handleForwardNode(peer, messages as OB11MessageNode[], group)
@@ -318,7 +353,12 @@ export class SendMsg extends BaseAction<OB11PostSendMsg, ReturnDataType> {
             }
         }
         // log("send msg:", peer, sendElements)
-        const {sendElements, deleteAfterSentFiles} = await createSendElements(messages, group)
+        const {sendElements, deleteAfterSentFiles} = await createSendElements(messages, group || friend)
+        if (sendElements.length === 1){
+            if (sendElements[0] === null){
+                return {message_id: 0}
+            }
+        }
         const returnMsg = await sendMsg(peer, sendElements, deleteAfterSentFiles)
         deleteAfterSentFiles.map(f => fs.unlink(f, () => {
         }));
@@ -476,8 +516,6 @@ export class SendMsg extends BaseAction<OB11PostSendMsg, ReturnDataType> {
             return null;
         }
     }
-
-
 
 
     private genMusicElement(url: string, audio: string, title: string, content: string, image: string): SendArkElement {

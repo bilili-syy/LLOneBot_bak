@@ -172,9 +172,11 @@ export interface ArkElement {
 }
 
 export const IMAGE_HTTP_HOST = "https://gchat.qpic.cn"
+export const IMAGE_HTTP_HOST_NT = "https://multimedia.nt.qq.com.cn"
 
 export interface PicElement {
-    originImageUrl: string;  // http url, 没有host，host是https://gchat.qpic.cn/
+    originImageUrl: string;  // http url, 没有host，host是https://gchat.qpic.cn/, 带download参数的是https://multimedia.nt.qq.com.cn
+    originImageMd5?: string;
     sourcePath: string; // 图片本地路径
     thumbPath: Map<number, string>;
     picWidth: number;
@@ -210,9 +212,28 @@ export interface GrayTipElement {
     }
 }
 
+export enum FaceType {
+    normal=1, // 小黄脸
+    normal2=2, // 新小黄脸, 从faceIndex 222开始？
+    dice=3  // 骰子
+}
+
+export enum FaceIndex {
+    dice = 358,
+    RPS = 359  // 石头剪刀布
+}
+
 export interface FaceElement {
     faceIndex: number,
-    faceType: 1
+    faceType: FaceType,
+    faceText?: string,
+    packId?: string,
+    stickerId?: string,
+    sourceType?: number,
+    stickerType?: number,
+    resultId?: string,
+    surpriseId?: string,
+    randomType?: number
 }
 
 export interface MarketFaceElement {
@@ -279,6 +300,34 @@ export interface VideoElement {
     "sourceVideoCodecFormat"?: number
 }
 
+export interface MarkdownElement {
+    content: string,
+}
+
+export interface InlineKeyboardElementRowButton{
+    "id": "",
+    "label": string,
+    "visitedLabel": string,
+    "style": 1, // 未知
+    "type": 2, // 未知
+    "clickLimit": 0,  // 未知
+    "unsupportTips": "请升级新版手机QQ",
+    "data": string,
+    "atBotShowChannelList": false,
+    "permissionType": 2,
+    "specifyRoleIds": [],
+    "specifyTinyids": [],
+    "isReply": false,
+    "anchor": 0,
+    "enter": false,
+    "subscribeDataTemplateIds": []
+}
+export interface InlineKeyboardElement {
+    rows: [{
+        buttons: InlineKeyboardElementRowButton[]
+    }]
+}
+
 export interface TipAioOpGrayTipElement {  // 这是什么提示来着？
     operateType: number,
     peerUid: string,
@@ -287,6 +336,7 @@ export interface TipAioOpGrayTipElement {  // 这是什么提示来着？
 
 export enum TipGroupElementType {
     memberIncrease = 1,
+    kicked = 3, // 被移出群
     ban = 8
 }
 
@@ -297,7 +347,7 @@ export interface TipGroupElement {
     "memberUid": string,
     "memberNick": string,
     "memberRemark": string,
-    "adminUid": string,  // 同意加群的管理员uid
+    "adminUid": string,
     "adminNick": string,
     "adminRemark": string,
     "createGroup": null,
@@ -329,6 +379,11 @@ export interface TipGroupElement {
     }
 }
 
+export interface MultiForwardMsgElement{
+    xmlContent: string,  // xml格式的消息内容
+    resId: string,
+    fileName: string,
+}
 
 export interface RawMessage {
     msgId: string;
@@ -367,5 +422,8 @@ export interface RawMessage {
         videoElement: VideoElement;
         fileElement: FileElement;
         marketFaceElement: MarketFaceElement;
+        inlineKeyboardElement: InlineKeyboardElement;
+        markdownElement: MarkdownElement;
+        multiForwardMsgElement: MultiForwardMsgElement;
     }[];
 }

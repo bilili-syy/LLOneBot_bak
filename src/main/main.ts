@@ -18,7 +18,7 @@ import {
     friendRequests,
     getFriend,
     getGroup,
-    getGroupMember,
+    getGroupMember, groups,
     llonebotError,
     refreshGroupMembers,
     selfInfo,
@@ -47,13 +47,13 @@ import {dbUtil} from "../common/db";
 import {setConfig} from "./setConfig";
 import {NTQQUserApi} from "../ntqqapi/api/user";
 import {NTQQGroupApi} from "../ntqqapi/api/group";
-import {registerPokeHandler} from "../ntqqapi/external/ccpoke";
+import {crychic} from "../ntqqapi/external/crychic";
 import {OB11FriendPokeEvent, OB11GroupPokeEvent} from "../onebot11/event/notice/OB11PokeEvent";
 import {checkNewVersion, upgradeLLOneBot} from "../common/utils/upgrade";
 import {log} from "../common/utils/log";
 import {getConfigUtil} from "../common/config";
 import {checkFfmpeg} from "../common/utils/video";
-
+import {GroupDecreaseSubType, OB11GroupDecreaseEvent} from "../onebot11/event/notice/OB11GroupDecreaseEvent";
 
 let running = false;
 
@@ -63,7 +63,6 @@ let mainWindow: BrowserWindow | null = null;
 function onLoad() {
     log("llonebot main onLoad");
     ipcMain.handle(CHANNEL_CHECK_VERSION, async (event, arg) => {
-
         return checkNewVersion();
     });
     ipcMain.handle(CHANNEL_UPDATE, async (event, arg) => {
@@ -109,6 +108,7 @@ function onLoad() {
         let error = `${otherError}\n${httpServerError}\n${wsServerError}\n${ffmpegError}`
         error = error.replace("\n\n", "\n")
         error = error.trim();
+        log("查询llonebot错误信息", error);
         return error;
     })
     ipcMain.handle(CHANNEL_GET_CONFIG, async (event, arg) => {
@@ -117,7 +117,9 @@ function onLoad() {
     })
     ipcMain.on(CHANNEL_SET_CONFIG, (event, ask: boolean, config: Config) => {
         if (!ask) {
-            setConfig(config).then();
+            setConfig(config).then().catch(e => {
+                log("保存设置失败", e.stack)
+            });
             return
         }
         dialog.showMessageBox(mainWindow, {
@@ -129,7 +131,9 @@ function onLoad() {
             detail: 'LLOneBot配置已更改，是否保存？'
         }).then(result => {
             if (result.response === 0) {
-                setConfig(config).then();
+                setConfig(config).then().catch(e => {
+                    log("保存设置失败", e.stack)
+                });
             } else {
             }
         }).catch(err => {
@@ -179,7 +183,8 @@ function onLoad() {
 
     async function startReceiveHook() {
         if (getConfigUtil().getConfig().enablePoke) {
-            registerPokeHandler((id, isGroup) => {
+            crychic.loadNode()
+            crychic.registerPokeHandler((id, isGroup) => {
                 log(`收到戳一戳消息了！是否群聊：${isGroup}，id:${id}`)
                 let pokeEvent: OB11FriendPokeEvent | OB11GroupPokeEvent;
                 if (isGroup) {
@@ -298,11 +303,23 @@ function onLoad() {
                             } else {
                                 log("获取群通知的成员信息失败", notify, getGroup(notify.group.groupCode));
                             }
-                        } else if (notify.type == GroupNotifyTypes.MEMBER_EXIT) {
-                            // log("有成员退出通知");
-                            // const member1 = await getGroupMember(notify.group.groupCode, null, notify.user1.uid);
-                            // let groupDecreaseEvent = new OB11GroupDecreaseEvent(parseInt(notify.group.groupCode), parseInt(member1.uin))
-                            // postEvent(groupDecreaseEvent, true);
+                        } else if (notify.type == GroupNotifyTypes.MEMBER_EXIT || notify.type == GroupNotifyTypes.KICK_MEMBER) {
+                            log("有成员退出通知", notify);
+                            try {
+                                const member1 = await NTQQUserApi.getUserDetailInfo(notify.user1.uid);
+                                let operatorId = member1.uin;
+                                let subType: GroupDecreaseSubType = "leave";
+                                if (notify.user2.uid) {
+                                    // 是被踢的
+                                    const member2 = await getGroupMember(notify.group.groupCode, notify.user2.uid);
+                                    operatorId = member2.uin;
+                                    subType = "kick";
+                                }
+                                let groupDecreaseEvent = new OB11GroupDecreaseEvent(parseInt(notify.group.groupCode), parseInt(member1.uin), parseInt(operatorId), subType)
+                                postOB11Event(groupDecreaseEvent, true);
+                            } catch (e) {
+                                log("获取群通知的成员信息失败", notify, e.stack.toString())
+                            }
                         } else if ([GroupNotifyTypes.JOIN_REQUEST].includes(notify.type)) {
                             log("有加群请求");
                             let groupRequestEvent = new OB11GroupRequestEvent();
@@ -343,8 +360,9 @@ function onLoad() {
 
         registerReceiveHook<FriendRequestNotify>(ReceiveCmdS.FRIEND_REQUEST, async (payload) => {
             for (const req of payload.data.buddyReqs) {
-                if (req.isUnread && !friendRequests[req.sourceId] && (parseInt(req.reqTime) > startTime / 1000)) {
-                    friendRequests[req.sourceId] = req;
+                let flag = req.friendUid + req.reqTime;
+                if (req.isUnread && (parseInt(req.reqTime) > startTime / 1000)) {
+                    friendRequests[flag] = req;
                     log("有新的好友请求", req);
                     let friendRequestEvent = new OB11FriendRequestEvent();
                     try {
@@ -353,7 +371,7 @@ function onLoad() {
                     } catch (e) {
                         log("获取加好友者QQ号失败", e);
                     }
-                    friendRequestEvent.flag = req.sourceId.toString();
+                    friendRequestEvent.flag = flag;
                     friendRequestEvent.comment = req.extWords;
                     postOB11Event(friendRequestEvent);
                 }
@@ -373,13 +391,7 @@ function onLoad() {
             }
         })
         startReceiveHook().then();
-        // NTQQGroupApi.getGroups(true).then(_groups => {
-        //     _groups.map(group => {
-        //         if (!groups.find(g => g.groupCode == group.groupCode)) {
-        //             groups.push(group)
-        //         }
-        //     })
-        // })
+        NTQQGroupApi.getGroups(true).then()
         const config = getConfigUtil().getConfig()
         if (config.ob11.enableHttp) {
             ob11HTTPServer.start(config.ob11.httpPort)
